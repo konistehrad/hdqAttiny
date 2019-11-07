@@ -3,61 +3,12 @@
 #include "SSD1306Ascii.h"
 #include "SSD1306AsciiWire.h"
 #include "HDQ.h"
+#include "flags.h"
 
 // 0X3C+SA0 - 0x3C or 0x3D
 #define I2C_ADDRESS 0x3C
 #define HDQ_WIRE_PIN 3
 #define DEBUG_LED 4
-
-union Flags {
-  uint16_t full;
-  struct {
-    union {
-      uint8_t raw;
-      struct {
-        unsigned int otc : 1;
-        unsigned int otd : 1;
-        unsigned int bathi : 1;
-        unsigned int batlow : 1;
-        unsigned int chginh : 1;
-        unsigned int xchg : 1;
-        unsigned int fc : 1;
-        unsigned int chg : 1;
-      } fields;
-    } high;
-    union {
-      uint8_t raw;
-      struct {
-        unsigned int ocvtaken : 1;
-        unsigned int rsvd0 : 1;
-        unsigned int rsvd1 : 1;
-        unsigned int cf : 1;
-        unsigned int rsvd2 : 1;
-        unsigned int soc1 : 1;
-        unsigned int socf : 1;
-        unsigned int dsg : 1;
-      } fields;
-    } low;
-  } components;
-  struct {
-    unsigned int otc : 1;
-    unsigned int otd : 1;
-    unsigned int bathi : 1;
-    unsigned int batlow : 1;
-    unsigned int chginh : 1;
-    unsigned int xchg : 1;
-    unsigned int fc : 1;
-    unsigned int chg : 1;
-    unsigned int ocvtaken : 1;
-    unsigned int rsvd0 : 1;
-    unsigned int rsvd1 : 1;
-    unsigned int cf : 1;
-    unsigned int rsvd2 : 1;
-    unsigned int soc1 : 1;
-    unsigned int socf : 1;
-    unsigned int dsg : 1;
-  } fields;
-};
 
 uint16_t lastBatV = __UINT16_MAX__;
 HDQ hdq(HDQ_WIRE_PIN);
@@ -65,6 +16,7 @@ SSD1306AsciiWire oled;
 bool hot = false;
 uint16_t tick = 0;
 Flags flags;
+FlagsB flags_b;
 
 uint16_t word_write(uint8_t reg0, uint8_t payload0, uint8_t reg1, uint8_t payload1) {
   uint8_t BYT1, BYT2;
@@ -103,25 +55,30 @@ void print_battery_stats() {
   oled.home();
 
   res = word_read(0x0E, 0x0F);
-  if(res != __UINT16_MAX__)
-  {
-    flags.full = res;
-  }
+  flags.full = res;
 
+  res = word_read(0x12, 0x13);
+  flags_b.full = res;
 
   // percentage reg
   oled.set2X();
   res = word_read(0x02, 0x03);
   oled.print(res, DEC); oled.print("% "); 
-  if(!flags.fields.dsg) {
-    oled.print("(+)");
-  }
-  oled.clearToEOL(); oled.println();
-  oled.set1X();
+
+  // health reg
+  oled.set1X(); 
+  auto col = oled.col();
+  auto row = oled.row();
+  res = word_read(0x2E, 0x2F);
+  oled.print("Health: "); oled.print(res); oled.print("%"); oled.clearToEOL();
+
+  // discharge / charge state
+  oled.setCursor(col, row+1);
+  oled.print(flags.fields.dsg ? "Discharging" : "Charging"); oled.clearToEOL(); oled.println();
 
   // capacity register
   res = word_read(0x04, 0x05);
-  oled.print("Cap: "); oled.print(res, DEC); oled.print("mAH");
+  oled.print("Cap: "); oled.print(res, DEC); oled.print(" mAH");
   oled.clearToEOL(); oled.println();
 
   // voltage register
@@ -130,25 +87,27 @@ void print_battery_stats() {
     lastBatV = res;
   }
   if(lastBatV != __UINT16_MAX__) {
-    oled.print("BatV: "); oled.print(lastBatV/1000); oled.print("."); oled.print(lastBatV%1000); oled.print("V");
+    oled.print("BatV: "); oled.print(lastBatV/1000); oled.print("."); oled.print(lastBatV%1000); oled.print(" V / ");
+    res = word_read(0x30, 0x31);
+    oled.print(res / 1000); oled.print("."); oled.print(res % 1000);
     oled.clearToEOL(); oled.println();
   }
 
   // current register
   res = word_read(0x0A, 0x0B);
-  oled.print("BatC: "); oled.print(res, DEC); oled.print("mA");
+  oled.print("BatC: "); oled.print(res, DEC); oled.print(" mA");
   oled.clearToEOL(); oled.println();
 
   res = word_read(0x0C, 0x0D);
   res -= 2732; // rounded Kelvin -> Celsius conversion
-  auto c_integer = res / 10;
-  auto c_fractional = res % 10;
-  oled.print("Temp: "); oled.print(c_integer, DEC); oled.print("."); oled.print(c_fractional, DEC); oled.print("C (");
-  auto f = ( (9 * c_integer) + 160 ) / 5;
-  oled.print(f, DEC); oled.print("F)");
+  uint8_t c_integer = res / 10;
+  uint8_t c_fractional = res % 10;
+  oled.print("Temp: "); oled.print(c_integer, DEC); oled.print("."); oled.print(c_fractional, DEC); oled.print(" C (");
+  uint8_t f = ( (9 * c_integer) + 160 ) / 5;
+  oled.print(f, DEC); oled.print(" F)");
   oled.clearToEOL(); oled.println();
 
-  oled.print("Flag: "); oled.print(flags.full, DEC); oled.print(" "); oled.print(flags.full, BIN);
+  oled.print("Flag: "); oled.print(flags.full, DEC); oled.print(" / "); oled.print(flags_b.full, DEC);
   oled.clearToEOL(); oled.println();
 }
 
