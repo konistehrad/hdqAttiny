@@ -8,7 +8,11 @@
 // 0X3C+SA0 - 0x3C or 0x3D
 #define I2C_ADDRESS 0x3C
 #define HDQ_WIRE_PIN 3
-#define DEBUG_LED 4
+#ifdef LED_BUILTIN 
+  #define DEBUG_LED LED_BUILTIN
+#else
+  #define DEBUG_LED 13
+#endif
 
 uint16_t lastBatV = __UINT16_MAX__;
 HDQ hdq(HDQ_WIRE_PIN);
@@ -94,8 +98,8 @@ void print_battery_stats() {
   }
 
   // current register
-  res = word_read(0x0A, 0x0B);
-  oled.print("BatC: "); oled.print(res, DEC); oled.print(" mA");
+  int16_t signedres = word_read(0x0A, 0x0B);
+  oled.print("BatC: "); oled.print(signedres, DEC); oled.print(" mA");
   oled.clearToEOL(); oled.println();
 
   res = word_read(0x0C, 0x0D);
